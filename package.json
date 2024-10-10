@@ -1,0 +1,9 @@
+{
+  "name": "nodenetwork",
+  "main": "index.js",
+  "packageManager": "yarn@4.3.1",
+  "dependencies": {
+    "csv2json": "^2.0.2",
+    "uuid": "^10.0.0"
+  }
+}
