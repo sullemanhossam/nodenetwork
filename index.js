@@ -1,148 +1,75 @@
-const csv2json = require("csv2json");
 const fs = require("fs");
-const { v4: uuidv4 } = require("uuid"); // Add UUID generator
+const path = require("path");
+const remark = require("remark");
+const remarkParse = require("remark-parse");
+const remarkStringify = require("remark-stringify");
 
-// Define file paths
-const connectionsFile = "connections.csv";
-const jsonFile = "data.json";
+// Function to create a markdown file
+function createMarkdownFile(filePath, content) {
+  fs.writeFileSync(filePath, content, "utf8");
+  console.log(`File created at: ${filePath}`);
+}
 
-// Convert CSV to JSON and store the result in a JSON file
-fs.createReadStream(connectionsFile)
-  .pipe(
-    csv2json({
-      // CSV separator is ';'
-      separator: ";",
-    })
-  )
-  .pipe(fs.createWriteStream(jsonFile))
-  .on("finish", () => {
-    console.log("CSV file successfully converted to JSON");
-    // After converting, initialize the network
-    initializeNetwork(jsonFile);
-  })
-  .on("error", (err) => {
-    console.error("Error during CSV to JSON conversion:", err);
-  });
-
-class Node {
-  constructor(name, uuid = uuidv4(), url) {
-    this.uuid = uuid; // Use provided uuid
-    this.name = name; // Initialize with connection data
-    this.url = url; // Store LinkedIn URL or other identifier
-  }
-
-  createDocument(name, content, location) {
-    const filePath = `${location}/${name}.md`;
-    try {
-      fs.writeFileSync(filePath, `# ${name}\n\n${content}`);
-      console.log(`Document created at: ${filePath}`);
-    } catch (err) {
-      console.error("Error creating document:", err);
-    }
+// Function to delete a file
+function deleteFile(filePath) {
+  if (fs.existsSync(filePath)) {
+    fs.unlinkSync(filePath);
+    console.log(`File deleted at: ${filePath}`);
+  } else {
+    console.log("File does not exist.");
   }
 }
 
-class Network {
-  constructor(nodes = {}) {
-    this.pilot = nodes[Object.keys(nodes)[0]] ?? null; // Get the first node as the pilot if it exists
-    this.nodes = nodes; // Initialize with an empty or provided dictionary of nodes
-  }
+// Function to append to a JSON representation of a Markdown file
+function appendToMarkdownJson(filePath, additionalContent) {
+  const markdown = fs.readFileSync(filePath, "utf8");
 
-  addNodes(nodes) {
-    nodes.forEach((node) => {
-      this.nodes[node.uuid] = node; // Add each node with uuid as the dynamic key
-    });
-  }
+  // Parse the Markdown to an AST
+  const processor = remark().use(remarkParse);
+  const ast = processor.parse(markdown);
 
-  displayNodes() {
-    console.log("Network nodes:", this.nodes);
-  }
+  // Append new content (as a paragraph)
+  const newContentNode = {
+    type: "paragraph",
+    children: [{ type: "text", value: additionalContent }],
+  };
+
+  ast.children.push(newContentNode);
+
+  return ast;
 }
 
-// Class to handle loading and parsing connections from a file
-class Connections {
-  constructor(path) {
-    this.path = path; // Path to the connections file
-  }
+// Function to save the AST (JSON) back as Markdown
+function saveMarkdownFileFromJson(ast, savePath) {
+  const processor = remark().use(remarkStringify);
+  const markdown = processor.stringify(ast);
 
-  formatConnections(data) {
-    const formattedData = [];
-
-    data.forEach((item) => {
-      const notes = item["Notes:"];
-
-      // Skip empty or metadata rows
-      if (!notes || notes.startsWith("First Name")) {
-        return;
-      }
-
-      // Change delimiter from ',' to ';' if necessary
-      const [firstName, lastName, url, email, company, position, connectedOn] =
-        notes.split(",");
-
-      if (url && url.includes("linkedin.com")) {
-        formattedData.push({
-          name: `${firstName.trim()} ${lastName.trim()}`,
-          email: email ? email.trim() : null,
-          company: company ? company.trim() : null,
-          position: position ? position.trim() : null,
-          connectedOn: connectedOn ? connectedOn.trim() : null,
-          url,
-        });
-      }
-    });
-
-    return formattedData;
-  }
-
-  // Method to load and parse JSON data from file
-  loadConnections() {
-    return new Promise((resolve, reject) => {
-      fs.readFile(this.path, "utf8", (err, data) => {
-        if (err) {
-          console.error("Error reading file:", err);
-          reject(err); // Handle errors if file reading fails
-        } else {
-          try {
-            const jsonData = JSON.parse(data);
-            resolve(jsonData);
-          } catch (parseError) {
-            console.error("Error parsing JSON data:", parseError);
-            reject(parseError); // Handle JSON parsing errors
-          }
-        }
-      });
-    });
-  }
+  // Save the updated Markdown content to a file
+  fs.writeFileSync(savePath, markdown, "utf8");
+  console.log(`File saved as markdown at: ${savePath}`);
 }
 
-// Function to initialize the network after connections are loaded
-function initializeNetwork(jsonPath) {
-  const connections = new Connections(jsonPath);
 
-  // Load connections and initialize the network
-  connections
-    .loadConnections()
-    .then((data) => {
-      const formattedConnections = connections.formatConnections(data);
-      console.log(formattedConnections);
+/**========================================================================
+ *                              FILE ^
+ *========================================================================**/
 
-      // Create nodes from formatted LinkedIn connections
-      const linkedInNodes = formattedConnections.map((connection) => {
-        // Use the URL as UUID if it is a LinkedIn connection
-        const uuid = connection.url;
-        return new Node(connection.name, uuid, connection.url); // Provide name, URL, and use URL as uuid
-      });
 
-      // Initialize the pilot node and the network
-      const pilotNode = new Node("Hossam Sulleman");
-      const nodeNetwork = new Network({ [pilotNode.uuid]: pilotNode }); // Create a new network with the pilot node
+// Example usage:
+const markdownContent = `# Example Title\n\nThis is an example markdown file.`;
+const filePath = path.join(__dirname, "example.md");
 
-      console.log("Formatted LinkedIn Nodes:", linkedInNodes);
-      nodeNetwork.addNodes(linkedInNodes); // Add LinkedIn nodes to the network
-      nodeNetwork.displayNodes(); // Display the network nodes
-    })
-    .catch((err) => {
-      console.error("Error loading connections:", err);
-    });
-}
+// 1. Create a markdown file
+createMarkdownFile(filePath, markdownContent);
+
+
+// 2. Append to the markdown file (via AST)
+const additionalContent = "This is additional content.";
+const ast = appendToMarkdownJson(filePath, additionalContent);
+
+// 3. Resave the updated markdown file
+const newFilePath = path.join(__dirname, "updated_example.md");
+saveMarkdownFileFromJson(ast, newFilePath);
+
+// 4. Delete the original file
+deleteFile(filePath);
